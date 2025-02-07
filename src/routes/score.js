@@ -1,16 +1,16 @@
-const router = require('express').Router();
-const redisClient = require('../config/redisClient');
-const authenticateJWT = require('../middleware/auth');
+const router = require("express").Router();
+const redisClient = require("../config/redisClient");
+const authenticateJWT = require("../middleware/auth");
 
 // Submit score route
-router.post('/submit', authenticateJWT, async (req, res) => {
+router.post("/submit", authenticateJWT, async (req, res) => {
   const { game, score } = req.body;
   const { username } = req.user; // Extract the username from the JWT token
 
   if (!game || !score) {
     return res
       .status(400)
-      .json({ message: 'Username, game, and score are required' });
+      .json({ message: "Username, game, and score are required" });
   }
 
   try {
@@ -19,18 +19,34 @@ router.post('/submit', authenticateJWT, async (req, res) => {
 
     // Add score to Redis sorted set for the specific game
     const key = `leaderboard:${game}`;
-    await redisClient.zAdd(key, { score: parsedScore, value: username });
 
-    // Optional: Add score to global leaderboard as well
-    await redisClient.zAdd('leaderboard:global', {
-      score: parsedScore,
-      value: username,
-    });
+    const currentGameScore = await redisClient.zScore(
+      `leaderboard:${game}`,
+      username
+    );
+    const currentGlobalScore = await redisClient.zScore(
+      `leaderboard:global`,
+      username
+    );
 
-    res.status(200).json({ message: 'Score submitted successfully' });
+    if (!currentGameScore || parsedScore > currentGameScore) {
+      await redisClient.zAdd(key, {
+        score: parsedScore,
+        value: username,
+      });
+    }
+
+    if (!currentGlobalScore || parsedScore > currentGlobalScore) {
+      await redisClient.zAdd("leaderboard:global", {
+        score: parsedScore,
+        value: username,
+      });
+    }
+
+    res.status(200).json({ message: "Score submitted successfully" });
   } catch (error) {
-    console.error('Error submitting score:', error);
-    res.status(500).json({ message: 'Server error', error });
+    console.error("Error submitting score:", error);
+    res.status(500).json({ message: "Server error", error });
   }
 });
 
